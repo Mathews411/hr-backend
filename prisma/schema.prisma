@@ -1,0 +1,2533 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Model
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  name        String
+  role        UserRole @default(EMPLOYEE)
+  employeeId  String?  @unique
+  department  String?
+  designation String?
+  company     String?  @default("Exozen")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  projects                   UserProject[]
+  refreshTokens              RefreshToken[]
+  roleAssignments            UserRoleAssignment[]
+  managerAssignments         ManagerAssignment[]
+  previousManagerAssignments ManagerAssignment[]  @relation("PreviousManager")
+  employeeMaster             EmployeeMaster?
+
+  @@map("users")
+}
+
+// User Role Enum
+enum UserRole {
+  ADMIN
+  PROJECT_DIRECTOR
+  PROJECT_HR
+  PROJECT_MANAGER
+  EMPLOYEE
+}
+
+// Project Model
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  code        String        @unique
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  startDate   DateTime?
+  endDate     DateTime?
+  categoryId  String? // Foreign key to ProjectCategory
+  priority    String? // Low, Medium, High, Critical
+  budget      Float? // Project budget
+  spent       Float? // Amount spent
+  progress    Int? // Progress percentage (0-100)
+  clientName  String? // Client name
+  location    String? // Project location
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  category            ProjectCategory?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  users               UserProject[]
+  employees           Employee[]
+  managerAssignments  ManagerAssignment[]
+  employeeAssignments EmployeeAssignment[]
+  budgetItems         BudgetItem[]
+  shiftAssignments    ShiftAssignment[]
+  documents           ProjectDocument[]
+  dailyLogs           DailyLog[]
+  geofenceAssignments GeofenceProjectAssignment[]
+  gpsPunches          GPSPunch[]
+  gpsRouteLogs        GPSRouteLog[]
+  locationAlerts      LocationDeviationAlert[]
+  overtimeRecords     OvertimeRecord[]
+  projectHours        ProjectHours[]
+
+  @@map("projects")
+}
+
+// Project Status Enum
+enum ProjectStatus {
+  ACTIVE
+  INACTIVE
+  COMPLETED
+  ON_HOLD
+}
+
+// User-Project Many-to-Many Relationship
+model UserProject {
+  id        String   @id @default(uuid())
+  userId    String
+  projectId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@map("user_projects")
+}
+
+// Manager Assignment Model (for tracking manager assignments to projects with timeline and status)
+model ManagerAssignment {
+  id                String                  @id @default(uuid())
+  userId            String // Manager (user with PROJECT_MANAGER role)
+  projectId         String
+  startDate         DateTime
+  endDate           DateTime?
+  status            ManagerAssignmentStatus @default(ACTIVE)
+  assignedDate      DateTime                @default(now())
+  assignedBy        String? // User ID who made the assignment
+  previousManagerId String? // Previous manager ID if reassigned
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  previousManager User?   @relation("PreviousManager", fields: [previousManagerId], references: [id], onDelete: SetNull)
+
+  @@map("manager_assignments")
+}
+
+// Manager Assignment Status Enum
+enum ManagerAssignmentStatus {
+  ACTIVE
+  COMPLETED
+  ON_HOLD
+}
+
+// Employee Model (for project employees - basic)
+model Employee {
+  id          String         @id @default(uuid())
+  employeeId  String         @unique
+  name        String
+  email       String?        @unique
+  phone       String?
+  department  String?
+  designation String?
+  projectId   String?
+  status      EmployeeStatus @default(ACTIVE)
+  joinDate    DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  project             Project?             @relation(fields: [projectId], references: [id])
+  employeeAssignments EmployeeAssignment[]
+  dailyLogs           DailyLog[]
+  shiftAssignments    ShiftAssignment[]
+
+  @@map("employees")
+}
+
+// Employee Status Enum
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+  ON_LEAVE
+}
+
+// Employee Master Model (comprehensive employee records)
+model EmployeeMaster {
+  id                       String               @id @default(uuid())
+  employeeCode             String               @unique
+  firstName                String
+  lastName                 String
+  email                    String               @unique
+  phone                    String
+  alternatePhone           String?
+  dateOfBirth              DateTime?
+  gender                   String? // 'Male', 'Female', 'Other'
+  maritalStatus            String? // 'Single', 'Married', 'Divorced', 'Widowed'
+  bloodGroup               String?
+  departmentId             String?
+  designationId            String?
+  employeeType             String? // 'Permanent', 'Contract', 'Intern', 'Consultant'
+  joiningDate              DateTime?
+  confirmationDate         DateTime?
+  reportingManagerId       String? // Self-referential to EmployeeMaster
+  workLocationId           String? // Foreign key to Location
+  shiftId                  String?
+  salaryTemplateId         String?
+  panNumber                String?
+  aadharNumber             String?
+  uanNumber                String?
+  esicNumber               String?
+  address                  String?
+  city                     String?
+  state                    String?
+  zipCode                  String?
+  country                  String?
+  emergencyContactName     String?
+  emergencyContactRelation String?
+  emergencyContactPhone    String?
+  status                   EmployeeMasterStatus @default(ACTIVE)
+  profilePhoto             String?
+  userId                   String?              @unique // Link to User if exists
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+
+  // Relations
+  user                        User?                        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  department                  Department?                  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designation                 Designation?                 @relation(fields: [designationId], references: [id], onDelete: SetNull)
+  salaryTemplate              SalaryTemplate?              @relation(fields: [salaryTemplateId], references: [id], onDelete: SetNull)
+  workLocation                Location?                    @relation(fields: [workLocationId], references: [id], onDelete: SetNull)
+  shift                       Shift?                       @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  reportingManager            EmployeeMaster?              @relation("ReportingManager", fields: [reportingManagerId], references: [id], onDelete: SetNull)
+  directReports               EmployeeMaster[]             @relation("ReportingManager")
+  kycVerifications            KYCVerification[]
+  documents                   EmployeeDocument[]
+  generatedIDCards            GeneratedIDCard[]
+  uniformAllocations          UniformAllocation[]
+  employeeAssets              EmployeeAsset[]
+  employmentHistory           EmploymentHistory[]
+  faceEnrollments             FaceEnrollment[]
+  faceRecognitionLogs         FaceRecognitionLog[]
+  antiSpoofingAlerts          AntiSpoofingAlert[]
+  fingerprintEnrollments      FingerprintEnrollment[]
+  fingerprintLogs             FingerprintLog[]
+  fingerprintValidationAlerts FingerprintValidationAlert[]
+  gpsPunches                  GPSPunch[]
+  dailyAttendance             DailyAttendance[]
+  checkInOutLogs              CheckInOutLog[]
+  overtimeRecords             OvertimeRecord[]
+  attendanceRegularizations   AttendanceRegularization[]
+  projectHours                ProjectHours[]
+  nightShiftAllowances        NightShiftAllowance[]
+  leaveDeductions             LeaveDeduction[]
+  gpsRouteLogs                GPSRouteLog[]
+  locationAlerts              LocationDeviationAlert[]
+  hrTickets                   HRTicket[]
+  kpiAssignments              KPIAssignment[]
+  monthlyEvaluations          MonthlyEvaluation[]
+  employeeReviews             ManagerReview[]              @relation("EmployeeReviews")
+  managerReviews              ManagerReview[]              @relation("ManagerReviews")
+  selfReviews                 SelfReview[]
+  promotionRecommendations    PromotionRecommendation[]
+  leaveApplications           LeaveApplication[]
+  leaveBalances               LeaveBalance[]
+  leaveEncashments            LeaveEncashment[]
+
+  @@map("employee_masters")
+}
+
+// Employee Master Status Enum
+enum EmployeeMasterStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+  TERMINATED
+}
+
+// Employee Assignment Model (for allocating employees to projects)
+model EmployeeAssignment {
+  id                   String                   @id @default(uuid())
+  employeeId           String // Can be User ID or Employee ID
+  projectId            String
+  role                 String // 'Project Manager', 'Team Lead', 'Developer', etc.
+  allocationPercentage Int // 0-100
+  startDate            DateTime
+  endDate              DateTime?
+  hourlyRate           Float?
+  status               EmployeeAssignmentStatus @default(ACTIVE)
+  assignedDate         DateTime                 @default(now())
+  assignedBy           String? // User ID
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("employee_assignments")
+}
+
+// Employee Assignment Status Enum
+enum EmployeeAssignmentStatus {
+  ACTIVE
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+// Budget Item Model (for project budgets)
+model BudgetItem {
+  id              String           @id @default(uuid())
+  projectId       String
+  category        String // 'Labor', 'Equipment', 'Software', etc.
+  itemName        String
+  description     String?
+  budgetedAmount  Float
+  actualAmount    Float            @default(0)
+  committedAmount Float            @default(0)
+  remainingAmount Float // Calculated: budgetedAmount - committedAmount
+  month           String // YYYY-MM format
+  status          BudgetItemStatus @default(PLANNED)
+  approvedBy      String?
+  approvedDate    DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("budget_items")
+}
+
+// Budget Item Status Enum
+enum BudgetItemStatus {
+  PLANNED
+  APPROVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// Shift Assignment Model (for assigning shifts to employees/departments for projects)
+model ShiftAssignment {
+  id               String    @id @default(uuid())
+  projectId        String
+  employeeId       String? // If assignmentType is 'Employee'
+  departmentId     String? // If assignmentType is 'Department'
+  shiftId          String
+  assignmentType   String // 'Employee' or 'Department'
+  startDate        DateTime
+  endDate          DateTime?
+  isRecurring      Boolean   @default(false)
+  recurringPattern String? // 'Daily', 'Weekly', 'Monthly'
+  isActive         Boolean   @default(true)
+  assignedBy       String? // User ID
+  assignedDate     DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  employee   Employee?   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  shift      Shift       @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@map("shift_assignments")
+}
+
+// Project Document Model
+model ProjectDocument {
+  id           String   @id @default(uuid())
+  projectId    String
+  fileName     String
+  fileType     String
+  fileSize     Int // in bytes
+  fileUrl      String? // URL or path to stored file
+  category     String // 'Requirements', 'Design', etc.
+  description  String?
+  version      String?
+  uploadedBy   String? // User ID
+  uploadedDate DateTime @default(now())
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_documents")
+}
+
+// Daily Log Model (for project daily work logs)
+model DailyLog {
+  id              String         @id @default(uuid())
+  projectId       String
+  employeeId      String
+  logDate         DateTime
+  hoursWorked     Float
+  taskDescription String
+  activityType    String // 'Development', 'Testing', etc.
+  status          DailyLogStatus @default(COMPLETED)
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("daily_logs")
+}
+
+// Daily Log Status Enum
+enum DailyLogStatus {
+  COMPLETED
+  IN_PROGRESS
+  BLOCKED
+  ON_HOLD
+}
+
+// Refresh Token Model for JWT refresh
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// Company Model
+model Company {
+  id                 String   @id @default(uuid())
+  companyName        String
+  legalName          String
+  registrationNumber String?  @unique
+  taxId              String?
+  industry           String?
+  companySize        String?
+  foundedYear        Int?
+  email              String?
+  phone              String?
+  website            String?
+  address            String?
+  city               String?
+  state              String?
+  country            String?
+  zipCode            String?
+  description        String?
+  logoUrl            String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("companies")
+}
+
+// Location Model
+model Location {
+  id           String   @id @default(uuid())
+  branchName   String
+  branchCode   String   @unique
+  address      String
+  city         String
+  state        String
+  country      String
+  zipCode      String
+  phone        String
+  email        String
+  managerName  String
+  managerEmail String
+  isActive     Boolean  @default(true)
+  description  String?
+  latitude     Float?
+  longitude    Float?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  employees   EmployeeMaster[]
+  departments Department[]
+  shifts      Shift[]
+
+  @@map("locations")
+}
+
+// Department Model
+model Department {
+  id               String   @id @default(uuid())
+  departmentName   String
+  departmentCode   String   @unique
+  headOfDepartment String
+  headEmail        String
+  headPhone        String
+  description      String
+  employeeCount    Int      @default(0)
+  isActive         Boolean  @default(true)
+  parentDepartment String?
+  locationId       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  employees        EmployeeMaster[]
+  jobOpenings      JobOpening[]
+  shiftAssignments ShiftAssignment[]
+  location         Location?         @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  @@map("departments")
+}
+
+// Designation Model
+model Designation {
+  id              String   @id @default(uuid())
+  designationName String
+  designationCode String   @unique
+  department      String
+  description     String
+  minSalary       Float?
+  maxSalary       Float?
+  employeeCount   Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  employees   EmployeeMaster[]
+  jobOpenings JobOpening[]
+
+  @@map("designations")
+}
+
+// Shift Model
+model Shift {
+  id             String   @id @default(uuid())
+  shiftName      String
+  shiftCode      String   @unique
+  startTime      String // Format: HH:mm
+  endTime        String // Format: HH:mm
+  breakDuration  Int      @default(0) // in minutes
+  totalHours     Float
+  isFlexible     Boolean  @default(false)
+  employeeCount  Int      @default(0)
+  isActive       Boolean  @default(true)
+  workingDays    String[] // Array of day names: ['Monday', 'Tuesday', ...]
+  locationId     String? // Foreign key to Location
+  departmentIds  String[] // Array of department IDs
+  designationIds String[] // Array of designation IDs
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  location         Location?         @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  employees        EmployeeMaster[]
+  shiftAssignments ShiftAssignment[]
+
+  @@map("shifts")
+}
+
+// Leave Policy Model
+model LeavePolicy {
+  id                 String   @id @default(uuid())
+  leaveType          String
+  leaveCode          String   @unique
+  entitlement        Int // days per year
+  carryForward       Boolean  @default(false)
+  maxCarryForward    Int?
+  requiresApproval   Boolean  @default(true)
+  applicableTo       String
+  description        String
+  isActive           Boolean  @default(true)
+  minDaysNotice      Int?
+  maxConsecutiveDays Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relations
+  leaveApplications LeaveApplication[]
+  leaveBalances     LeaveBalance[]
+  leaveEncashments  LeaveEncashment[]
+
+  @@map("leave_policies")
+}
+
+// Leave Application Model
+model LeaveApplication {
+  id                String                 @id @default(uuid())
+  applicationNumber String                 @unique
+  employeeMasterId  String
+  leavePolicyId     String
+  startDate         DateTime
+  endDate           DateTime
+  totalDays         Int
+  reason            String
+  status            LeaveApplicationStatus @default(PENDING)
+  appliedDate       DateTime               @default(now())
+  approvedBy        String?
+  approvedDate      DateTime?
+  rejectionReason   String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  leavePolicy    LeavePolicy    @relation(fields: [leavePolicyId], references: [id], onDelete: Restrict)
+
+  @@map("leave_applications")
+}
+
+// Leave Application Status Enum
+enum LeaveApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// Leave Balance Model
+model LeaveBalance {
+  id               String   @id @default(uuid())
+  employeeMasterId String
+  leavePolicyId    String
+  year             Int
+  totalAllocated   Int      @default(0)
+  used             Int      @default(0)
+  available        Int      @default(0)
+  carryForward     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  leavePolicy    LeavePolicy    @relation(fields: [leavePolicyId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeMasterId, leavePolicyId, year])
+  @@map("leave_balances")
+}
+
+// Leave Encashment Status Enum
+enum LeaveEncashmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSED
+}
+
+// Leave Encashment Model
+model LeaveEncashment {
+  id               String                @id @default(uuid())
+  requestNumber    String                @unique
+  employeeMasterId String
+  leavePolicyId    String
+  daysToEncash     Int
+  encashmentAmount Decimal               @db.Decimal(10, 2)
+  requestDate      DateTime              @default(now())
+  status           LeaveEncashmentStatus @default(PENDING)
+  approvedBy       String?
+  approvedDate     DateTime?
+  processedDate    DateTime?
+  rejectionReason  String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  leavePolicy    LeavePolicy    @relation(fields: [leavePolicyId], references: [id], onDelete: Restrict)
+
+  @@map("leave_encashments")
+}
+
+// Holiday Model
+model Holiday {
+  id           String   @id @default(uuid())
+  holidayName  String
+  holidayDate  DateTime // Date only
+  holidayType  String // 'National', 'State', 'Regional', 'Optional', 'Company'
+  applicableTo String
+  description  String?
+  isActive     Boolean  @default(true)
+  year         Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("holidays")
+}
+
+// Role Model for RBAC
+model Role {
+  id          String   @id @default(uuid())
+  roleName    String
+  roleCode    String   @unique
+  description String
+  permissions Json // Array of permission objects: [{ module: string, actions: { view, create, edit, delete, approve } }]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userAssignments UserRoleAssignment[]
+
+  @@map("roles")
+}
+
+// User Role Assignment Model (Many-to-Many between User and Role)
+model UserRoleAssignment {
+  id           String   @id @default(uuid())
+  userId       String
+  roleId       String
+  assignedDate DateTime @default(now())
+  assignedBy   String? // User ID who assigned this role
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_role_assignments")
+}
+
+// Asset Category Model
+model AssetCategory {
+  id                 String   @id @default(uuid())
+  categoryName       String
+  categoryCode       String   @unique
+  description        String
+  color              String? // Color key for UI display
+  depreciationMethod String? // 'none', 'straight-line', 'declining-balance', 'units-of-production'
+  depreciationRate   Float? // Annual depreciation rate in percentage
+  usefulLife         Int? // Useful life in years
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("asset_categories")
+}
+
+// Project Category Model
+model ProjectCategory {
+  id           String   @id @default(uuid())
+  categoryName String
+  categoryCode String   @unique
+  description  String
+  color        String? // Color key for UI display
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  projects Project[]
+
+  @@map("project_categories")
+}
+
+// Salary Template Model
+model SalaryTemplate {
+  id           String   @id @default(uuid())
+  templateName String
+  templateCode String   @unique
+  templateType String // 'Standard', 'Executive', 'Entry Level', 'Contract', 'Intern', 'Consultant'
+  description  String
+  components   Json // Array of salary components (earnings and deductions)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  employees EmployeeMaster[]
+
+  @@map("salary_templates")
+}
+
+// KYC Verification Model
+model KYCVerification {
+  id                 String                @id @default(uuid())
+  employeeMasterId   String
+  verificationStatus KYCVerificationStatus @default(PENDING)
+  submittedDate      DateTime              @default(now())
+  verifiedDate       DateTime?
+  verifiedBy         String? // User ID
+  overallRemarks     String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  documents      KYCDocument[]
+
+  @@map("kyc_verifications")
+}
+
+// KYC Verification Status Enum
+enum KYCVerificationStatus {
+  PENDING
+  IN_PROGRESS
+  VERIFIED
+  REJECTED
+}
+
+// KYC Document Model
+model KYCDocument {
+  id                String            @id @default(uuid())
+  kycVerificationId String
+  documentType      String // 'Aadhar Card', 'PAN Card', 'Passport', 'Bank Statement', etc.
+  documentNumber    String
+  issueDate         DateTime
+  expiryDate        DateTime?
+  issuingAuthority  String
+  documentFile      String? // URL or path to document file
+  status            KYCDocumentStatus @default(PENDING)
+  verifiedBy        String? // User ID
+  verifiedDate      DateTime?
+  rejectionReason   String?
+  remarks           String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  kycVerification KYCVerification @relation(fields: [kycVerificationId], references: [id], onDelete: Cascade)
+
+  @@map("kyc_documents")
+}
+
+// KYC Document Status Enum
+enum KYCDocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+// Employee Document Model
+model EmployeeDocument {
+  id               String                 @id @default(uuid())
+  employeeMasterId String
+  documentName     String
+  documentType     String // 'pdf', 'doc', 'xlsx', 'jpg', 'png', 'zip', etc.
+  documentCategory String // 'ID Documents', 'Employment Documents', 'Certificates', etc.
+  fileSize         Int // in bytes
+  fileUrl          String? // URL or path to stored file
+  uploadDate       DateTime               @default(now())
+  expiryDate       DateTime?
+  uploadedBy       String? // User ID
+  status           EmployeeDocumentStatus @default(ACTIVE)
+  description      String?
+  version          String?
+  isConfidential   Boolean                @default(false)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+
+  @@map("employee_documents")
+}
+
+// Employee Document Status Enum
+enum EmployeeDocumentStatus {
+  ACTIVE
+  ARCHIVED
+  EXPIRED
+}
+
+// ID Card Template Model
+model IDCardTemplate {
+  id                String   @id @default(uuid())
+  templateName      String
+  templateCode      String   @unique
+  backgroundColor   String   @default("#ffffff")
+  textColor         String   @default("#1a1a1a")
+  accentColor       String   @default("#667eea")
+  logoPosition      String   @default("left") // 'left', 'center', 'right'
+  photoPosition     String   @default("right") // 'left', 'right'
+  logoUrl           String? // URL or base64 for company logo
+  companyName       String? // Company name to display on ID card
+  companyAddress    String? // Company address to display on ID card
+  showEmployeePhoto Boolean  @default(true) // Whether to show employee photo
+  showQRCode        Boolean  @default(true)
+  showDepartment    Boolean  @default(true)
+  showDesignation   Boolean  @default(true)
+  showEmployeeCode  Boolean  @default(true)
+  showJoiningDate   Boolean  @default(false)
+  showExpiryDate    Boolean  @default(true)
+  isDefault         Boolean  @default(false)
+  createdDate       DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  generatedCards GeneratedIDCard[]
+
+  @@map("id_card_templates")
+}
+
+// Generated ID Card Model
+model GeneratedIDCard {
+  id               String       @id @default(uuid())
+  employeeMasterId String
+  templateId       String
+  photoUrl         String?
+  issueDate        DateTime     @default(now())
+  expiryDate       DateTime?
+  status           IDCardStatus @default(ACTIVE)
+  qrCode           String?
+  printedDate      DateTime?
+  printedBy        String? // User ID
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  template       IDCardTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  @@map("generated_id_cards")
+}
+
+// ID Card Status Enum
+enum IDCardStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+// Uniform Item Model
+model UniformItem {
+  id                String   @id @default(uuid())
+  itemName          String
+  itemCode          String   @unique
+  category          String // 'Shirt', 'Pant', 'Shoes', 'Jacket', 'Cap', 'Belt', 'Tie', 'Socks', 'Other'
+  availableSizes    String[] // ['XS', 'S', 'M', 'L', 'XL', 'XXL'] or ['7', '8', '9', '10', '11'] for shoes
+  unitCost          Float
+  totalQuantity     Int      @default(0)
+  allocatedQuantity Int      @default(0)
+  availableQuantity Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  allocations UniformAllocation[]
+
+  @@map("uniform_items")
+}
+
+// Uniform Allocation Model
+model UniformAllocation {
+  id                 String                  @id @default(uuid())
+  employeeMasterId   String
+  uniformItemId      String
+  size               String
+  quantity           Int                     @default(1)
+  issueDate          DateTime                @default(now())
+  returnDate         DateTime?
+  expectedReturnDate DateTime?
+  status             UniformAllocationStatus @default(ISSUED)
+  condition          String? // 'Good', 'Fair', 'Poor'
+  remarks            String?
+  issuedBy           String? // User ID
+  returnedBy         String? // User ID
+  returnedDate       DateTime?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  uniformItem    UniformItem    @relation(fields: [uniformItemId], references: [id], onDelete: Restrict)
+
+  @@map("uniform_allocations")
+}
+
+// Uniform Allocation Status Enum
+enum UniformAllocationStatus {
+  ISSUED
+  RETURNED
+  LOST
+  DAMAGED
+  EXPIRED
+}
+
+// Asset Item Model
+model AssetItem {
+  id                 String    @id @default(uuid())
+  assetName          String
+  assetCode          String    @unique
+  category           String // 'Laptop', 'Desktop', 'Mobile', 'Monitor', 'Keyboard', 'Mouse', 'Headset', 'Tablet', 'Printer', 'Scanner', 'Projector', 'Other'
+  brand              String?
+  model              String?
+  purchaseDate       DateTime?
+  purchaseCost       Float     @default(0)
+  warrantyPeriod     Int? // in months
+  warrantyExpiryDate DateTime?
+  totalQuantity      Int       @default(0)
+  allocatedQuantity  Int       @default(0)
+  availableQuantity  Int       @default(0)
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Relations
+  employeeAssets EmployeeAsset[]
+
+  @@map("asset_items")
+}
+
+// Employee Asset Model
+model EmployeeAsset {
+  id                 String              @id @default(uuid())
+  employeeMasterId   String
+  assetItemId        String
+  serialNumber       String?
+  issueDate          DateTime            @default(now())
+  returnDate         DateTime?
+  expectedReturnDate DateTime?
+  status             EmployeeAssetStatus @default(ISSUED)
+  condition          String? // 'Excellent', 'Good', 'Fair', 'Poor'
+  warrantyExpiryDate DateTime?
+  location           String? // 'Office', 'Home', 'Remote'
+  remarks            String?
+  issuedBy           String? // User ID
+  returnedBy         String? // User ID
+  returnedDate       DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  assetItem      AssetItem      @relation(fields: [assetItemId], references: [id], onDelete: Restrict)
+
+  @@map("employee_assets")
+}
+
+// Employee Asset Status Enum
+enum EmployeeAssetStatus {
+  ISSUED
+  RETURNED
+  LOST
+  DAMAGED
+  UNDER_REPAIR
+  EXPIRED
+}
+
+// Employment History Model
+model EmploymentHistory {
+  id                  String   @id @default(uuid())
+  employeeMasterId    String
+  eventType           String // 'Joining', 'Promotion', 'Transfer', 'Salary Change', 'Designation Change', 'Department Change', 'Status Change', 'Resignation', 'Termination', 'Other'
+  eventDate           DateTime
+  effectiveDate       DateTime
+  previousValue       String?
+  newValue            String
+  previousDepartment  String?
+  newDepartment       String?
+  previousDesignation String?
+  newDesignation      String?
+  previousSalary      Float?
+  newSalary           Float?
+  previousStatus      String?
+  newStatus           String?
+  reason              String?
+  description         String?
+  approvedBy          String? // User ID or name
+  remarks             String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+
+  @@map("employment_history")
+}
+
+// Face Enrollment Model
+model FaceEnrollment {
+  id               String               @id @default(uuid())
+  employeeMasterId String
+  status           FaceEnrollmentStatus @default(PENDING)
+  faceImages       Int                  @default(0)
+  qualityScore     Float? // 0-100
+  enrollmentDate   DateTime             @default(now())
+  completedDate    DateTime?
+  lastUpdated      DateTime             @updatedAt
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  faceImagesData FaceImage[]
+
+  @@map("face_enrollments")
+}
+
+// Face Enrollment Status Enum
+enum FaceEnrollmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+// Face Image Model
+model FaceImage {
+  id               String   @id @default(uuid())
+  faceEnrollmentId String
+  imageUrl         String // Path to stored image
+  imageName        String
+  imageSize        Int // Size in bytes
+  qualityScore     Float? // Individual image quality score
+  uploadedAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  faceEnrollment FaceEnrollment @relation(fields: [faceEnrollmentId], references: [id], onDelete: Cascade)
+
+  @@map("face_images")
+}
+
+// Camera Device Model
+model CameraDevice {
+  id                  String             @id @default(uuid())
+  deviceName          String
+  deviceId            String             @unique
+  location            String
+  ipAddress           String
+  port                Int                @default(8080)
+  status              CameraDeviceStatus @default(INACTIVE)
+  lastConnected       DateTime?
+  recognitionAccuracy Float              @default(0)
+  isEnabled           Boolean            @default(true)
+  model               String?
+  firmwareVersion     String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  // Relations
+  faceRecognitionLogs FaceRecognitionLog[]
+  antiSpoofingAlerts  AntiSpoofingAlert[]
+
+  @@map("camera_devices")
+}
+
+// Camera Device Status Enum
+enum CameraDeviceStatus {
+  ACTIVE
+  INACTIVE
+  OFFLINE
+}
+
+// Face Recognition Log Model (for live attendance feed)
+model FaceRecognitionLog {
+  id               String                @id @default(uuid())
+  employeeMasterId String?
+  cameraDeviceId   String
+  recognitionTime  DateTime              @default(now())
+  status           FaceRecognitionStatus @default(UNKNOWN)
+  confidence       Float                 @default(0)
+  imageUrl         String? // Snapshot from camera
+  location         String? // Camera location
+  remarks          String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster? @relation(fields: [employeeMasterId], references: [id], onDelete: SetNull)
+  cameraDevice   CameraDevice    @relation(fields: [cameraDeviceId], references: [id], onDelete: Cascade)
+
+  @@index([recognitionTime])
+  @@index([status])
+  @@index([cameraDeviceId])
+  @@map("face_recognition_logs")
+}
+
+// Face Recognition Status Enum
+enum FaceRecognitionStatus {
+  RECOGNIZED
+  FAILED
+  UNKNOWN
+}
+
+// Anti-Spoofing Alert Model
+model AntiSpoofingAlert {
+  id               String                  @id @default(uuid())
+  employeeMasterId String?
+  cameraDeviceId   String
+  alertTime        DateTime                @default(now())
+  alertType        AntiSpoofingAlertType
+  severity         AntiSpoofingSeverity
+  status           AntiSpoofingAlertStatus @default(ACTIVE)
+  confidence       Float                   @default(0)
+  imageUrl         String? // Snapshot from camera
+  location         String? // Camera location
+  description      String
+  resolvedAt       DateTime?
+  resolvedBy       String? // User ID
+  remarks          String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster? @relation(fields: [employeeMasterId], references: [id], onDelete: SetNull)
+  cameraDevice   CameraDevice    @relation(fields: [cameraDeviceId], references: [id], onDelete: Cascade)
+
+  @@index([alertTime])
+  @@index([status])
+  @@index([severity])
+  @@index([cameraDeviceId])
+  @@map("anti_spoofing_alerts")
+}
+
+// Anti-Spoofing Alert Type Enum
+enum AntiSpoofingAlertType {
+  PHOTO_DETECTION
+  VIDEO_REPLAY
+  MASK_DETECTION
+  MODEL_3D
+  LIVENESS_FAILURE
+}
+
+// Anti-Spoofing Severity Enum
+enum AntiSpoofingSeverity {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// Anti-Spoofing Alert Status Enum
+enum AntiSpoofingAlertStatus {
+  ACTIVE
+  RESOLVED
+  FALSE_POSITIVE
+}
+
+// Fingerprint Device Model
+model FingerprintDevice {
+  id                  String                  @id @default(uuid())
+  deviceName          String
+  deviceId            String                  @unique
+  serialNumber        String                  @unique
+  macAddress          String                  @unique
+  location            String
+  ipAddress           String
+  port                Int                     @default(4370)
+  status              FingerprintDeviceStatus @default(INACTIVE)
+  lastConnected       DateTime?
+  recognitionAccuracy Float                   @default(0)
+  isEnabled           Boolean                 @default(true)
+  model               String? // e.g., "Identix X2008"
+  firmwareVersion     String?
+  algorithm           String? // e.g., "ZKFinger VX10.0"
+  platform            String? // e.g., "ZLM60_TFT"
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  // Relations
+  fingerprintEnrollments FingerprintEnrollment[]
+  fingerprintLogs        FingerprintLog[]
+  validationAlerts       FingerprintValidationAlert[]
+
+  @@map("fingerprint_devices")
+}
+
+// Fingerprint Device Status Enum
+enum FingerprintDeviceStatus {
+  ACTIVE
+  INACTIVE
+  OFFLINE
+}
+
+// Fingerprint Enrollment Model
+model FingerprintEnrollment {
+  id                  String                      @id @default(uuid())
+  employeeMasterId    String
+  fingerprintDeviceId String
+  fingerprintTemplate String? // Encrypted fingerprint template data
+  fingerprintIndex    Int? // Index on device (1-10 for multiple fingers)
+  qualityScore        Float? // 0-100
+  status              FingerprintEnrollmentStatus @default(PENDING)
+  enrollmentDate      DateTime                    @default(now())
+  completedDate       DateTime?
+  lastUpdated         DateTime                    @updatedAt
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+
+  // Relations
+  employeeMaster    EmployeeMaster    @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  fingerprintDevice FingerprintDevice @relation(fields: [fingerprintDeviceId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeMasterId, fingerprintDeviceId, fingerprintIndex])
+  @@map("fingerprint_enrollments")
+}
+
+// Fingerprint Enrollment Status Enum
+enum FingerprintEnrollmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+// Fingerprint Log Model (for attendance tracking)
+model FingerprintLog {
+  id                  String               @id @default(uuid())
+  employeeMasterId    String?
+  fingerprintDeviceId String
+  recognitionTime     DateTime             @default(now())
+  status              FingerprintLogStatus @default(UNKNOWN)
+  confidence          Float                @default(0)
+  fingerprintIndex    Int? // Which finger was used
+  location            String? // Device location
+  remarks             String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  // Relations
+  employeeMaster    EmployeeMaster?   @relation(fields: [employeeMasterId], references: [id], onDelete: SetNull)
+  fingerprintDevice FingerprintDevice @relation(fields: [fingerprintDeviceId], references: [id], onDelete: Cascade)
+
+  @@index([recognitionTime])
+  @@index([status])
+  @@index([fingerprintDeviceId])
+  @@map("fingerprint_logs")
+}
+
+// Fingerprint Log Status Enum
+enum FingerprintLogStatus {
+  RECOGNIZED
+  FAILED
+  UNKNOWN
+  DUPLICATE
+}
+
+// Fingerprint Validation Alert Model
+model FingerprintValidationAlert {
+  id                  String                           @id @default(uuid())
+  employeeMasterId    String?
+  fingerprintDeviceId String
+  alertTime           DateTime                         @default(now())
+  alertType           FingerprintValidationAlertType
+  severity            FingerprintValidationSeverity
+  status              FingerprintValidationAlertStatus @default(ACTIVE)
+  confidence          Float                            @default(0)
+  location            String? // Device location
+  description         String
+  resolvedAt          DateTime?
+  resolvedBy          String? // User ID
+  remarks             String?
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
+
+  // Relations
+  employeeMaster    EmployeeMaster?   @relation(fields: [employeeMasterId], references: [id], onDelete: SetNull)
+  fingerprintDevice FingerprintDevice @relation(fields: [fingerprintDeviceId], references: [id], onDelete: Cascade)
+
+  @@index([alertTime])
+  @@index([status])
+  @@index([severity])
+  @@index([fingerprintDeviceId])
+  @@map("fingerprint_validation_alerts")
+}
+
+// Fingerprint Validation Alert Type Enum
+enum FingerprintValidationAlertType {
+  LOW_QUALITY
+  TEMPLATE_MISMATCH
+  DUPLICATE_ENROLLMENT
+  DEVICE_ERROR
+  COMMUNICATION_FAILURE
+}
+
+// Fingerprint Validation Severity Enum
+enum FingerprintValidationSeverity {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// Fingerprint Validation Alert Status Enum
+enum FingerprintValidationAlertStatus {
+  ACTIVE
+  RESOLVED
+  FALSE_POSITIVE
+}
+
+// Geofence Area Model
+model GeofenceArea {
+  id           String         @id @default(uuid())
+  geofenceName String
+  geofenceCode String         @unique
+  location     String
+  latitude     Float
+  longitude    Float
+  radius       Float // in meters
+  type         GeofenceType
+  status       GeofenceStatus @default(INACTIVE)
+  isEnabled    Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  // Relations
+  projectAssignments GeofenceProjectAssignment[]
+  gpsPunches         GPSPunch[]
+  locationAlerts     LocationDeviationAlert[]
+
+  @@map("geofence_areas")
+}
+
+// Geofence Type Enum
+enum GeofenceType {
+  OFFICE
+  PROJECT_SITE
+  CLIENT_LOCATION
+  OTHER
+}
+
+// Geofence Status Enum
+enum GeofenceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// Geofence Project Assignment Model
+model GeofenceProjectAssignment {
+  id             String                   @id @default(uuid())
+  projectId      String
+  geofenceAreaId String
+  assignedDate   DateTime                 @default(now())
+  assignedBy     String? // User ID
+  status         GeofenceAssignmentStatus @default(ACTIVE)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  // Relations
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  geofenceArea GeofenceArea @relation(fields: [geofenceAreaId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, geofenceAreaId])
+  @@map("geofence_project_assignments")
+}
+
+// Geofence Assignment Status Enum
+enum GeofenceAssignmentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// GPS Punch Model
+model GPSPunch {
+  id               String         @id @default(uuid())
+  employeeMasterId String
+  projectId        String?
+  geofenceAreaId   String?
+  punchType        GPSPunchType
+  punchTime        DateTime       @default(now())
+  latitude         Float
+  longitude        Float
+  location         String
+  distance         Float? // distance from geofence center in meters
+  status           GPSPunchStatus
+  accuracy         Float? // GPS accuracy in meters
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  project        Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  geofenceArea   GeofenceArea?  @relation(fields: [geofenceAreaId], references: [id], onDelete: SetNull)
+
+  @@index([punchTime])
+  @@index([employeeMasterId])
+  @@index([status])
+  @@map("gps_punches")
+}
+
+// GPS Punch Type Enum
+enum GPSPunchType {
+  IN
+  OUT
+}
+
+// GPS Punch Status Enum
+enum GPSPunchStatus {
+  VALID
+  INVALID
+  OUTSIDE_GEOFENCE
+}
+
+// GPS Route Log Model
+model GPSRouteLog {
+  id               String         @id @default(uuid())
+  employeeMasterId String
+  projectId        String?
+  date             DateTime       @db.Date
+  startTime        DateTime
+  endTime          DateTime?
+  startLocation    String
+  endLocation      String?
+  startLatitude    Float
+  startLongitude   Float
+  endLatitude      Float?
+  endLongitude     Float?
+  totalDistance    Float? // in kilometers
+  totalDuration    Int? // in minutes
+  status           GPSRouteStatus @default(ACTIVE)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster     @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  project        Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  waypoints      GPSRouteWaypoint[]
+
+  @@index([date])
+  @@index([employeeMasterId])
+  @@index([status])
+  @@map("gps_route_logs")
+}
+
+// GPS Route Status Enum
+enum GPSRouteStatus {
+  ACTIVE
+  COMPLETED
+  PAUSED
+}
+
+// GPS Route Waypoint Model
+model GPSRouteWaypoint {
+  id         String   @id @default(uuid())
+  routeLogId String
+  timestamp  DateTime
+  latitude   Float
+  longitude  Float
+  location   String
+  speed      Float? // in km/h
+  createdAt  DateTime @default(now())
+
+  // Relations
+  routeLog GPSRouteLog @relation(fields: [routeLogId], references: [id], onDelete: Cascade)
+
+  @@index([routeLogId])
+  @@map("gps_route_waypoints")
+}
+
+// Location Deviation Alert Model
+model LocationDeviationAlert {
+  id                String                @id @default(uuid())
+  employeeMasterId  String
+  projectId         String?
+  geofenceAreaId    String?
+  alertTime         DateTime              @default(now())
+  alertType         LocationAlertType
+  severity          LocationAlertSeverity
+  status            LocationAlertStatus   @default(ACTIVE)
+  currentLatitude   Float
+  currentLongitude  Float
+  expectedLatitude  Float?
+  expectedLongitude Float?
+  deviationDistance Float // in meters
+  description       String
+  resolvedAt        DateTime?
+  resolvedBy        String? // User ID
+  remarks           String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  project        Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  geofenceArea   GeofenceArea?  @relation(fields: [geofenceAreaId], references: [id], onDelete: SetNull)
+
+  @@index([alertTime])
+  @@index([status])
+  @@index([severity])
+  @@map("location_deviation_alerts")
+}
+
+// Location Alert Type Enum
+enum LocationAlertType {
+  OUTSIDE_GEOFENCE
+  NO_GPS_SIGNAL
+  LOCATION_MISMATCH
+  ROUTE_DEVIATION
+}
+
+// Location Alert Severity Enum
+enum LocationAlertSeverity {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// Location Alert Status Enum
+enum LocationAlertStatus {
+  ACTIVE
+  RESOLVED
+  FALSE_POSITIVE
+}
+
+// HR Ticket Model
+model HRTicket {
+  id                 String         @id @default(uuid())
+  ticketNumber       String         @unique
+  employeeMasterId   String
+  ticketType         String // 'Leave Request', 'Salary Query', etc.
+  category           String // 'Leave Management', 'Payroll', etc.
+  subject            String
+  description        String
+  priority           TicketPriority @default(MEDIUM)
+  status             TicketStatus   @default(OPEN)
+  relatedTo          String? // Related employee, project, or document reference
+  assignedTo         String? // User ID or team name
+  createdDate        DateTime       @default(now())
+  lastUpdated        DateTime       @updatedAt
+  resolvedDate       DateTime?
+  resolvedBy         String? // User ID
+  satisfactionRating Int? // 1-5 rating
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster     @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  responses      TicketResponse[]
+  attachments    TicketAttachment[]
+
+  @@map("hr_tickets")
+}
+
+// Ticket Priority Enum
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// Ticket Status Enum
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  ON_HOLD
+}
+
+// Ticket Response Model
+model TicketResponse {
+  id          String        @id @default(uuid())
+  ticketId    String
+  respondedBy String // User ID
+  response    String
+  status      TicketStatus? // Updated status if changed
+  isInternal  Boolean       @default(false) // Internal note vs employee-visible response
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  ticket HRTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_responses")
+}
+
+// Ticket Attachment Model
+model TicketAttachment {
+  id           String   @id @default(uuid())
+  ticketId     String
+  fileName     String
+  fileType     String
+  fileSize     Int // in bytes
+  fileUrl      String // URL or path to stored file
+  uploadedBy   String? // User ID
+  uploadedDate DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  ticket HRTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_attachments")
+}
+
+// Job Opening Model
+model JobOpening {
+  id               String            @id @default(uuid())
+  jobTitle         String
+  jobCode          String            @unique
+  departmentId     String?
+  designationId    String?
+  employmentType   JobEmploymentType @default(FULL_TIME)
+  jobLocation      String
+  numberOfOpenings Int               @default(1)
+  minExperience    Int?
+  maxExperience    Int?
+  education        String?
+  skills           String? // JSON array or comma-separated
+  minSalary        Float?
+  maxSalary        Float?
+  salaryCurrency   String?           @default("INR")
+  jobDescription   String
+  responsibilities String
+  requirements     String
+  benefits         String?
+  postedDate       DateTime          @default(now())
+  closingDate      DateTime?
+  status           JobOpeningStatus  @default(DRAFT)
+  createdBy        String? // User ID
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  // Relations
+  department            Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designation           Designation?           @relation(fields: [designationId], references: [id], onDelete: SetNull)
+  candidateApplications CandidateApplication[]
+
+  @@map("job_openings")
+}
+
+// Candidate Application Model
+model CandidateApplication {
+  id                String                     @id @default(uuid())
+  applicationNumber String                     @unique
+  candidateName     String
+  email             String
+  phone             String
+  jobOpeningId      String
+  experience        String?
+  currentLocation   String?
+  resumeUrl         String?
+  coverLetter       String?
+  education         String?
+  skills            String?
+  expectedSalary    Float?
+  noticePeriod      String?
+  status            CandidateApplicationStatus @default(APPLIED)
+  screeningScore    Int?
+  screeningNotes    String?
+  screenedBy        String?
+  screenedDate      DateTime?
+  appliedDate       DateTime                   @default(now())
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  // Relations
+  jobOpening  JobOpening           @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+  interviews  Interview[]
+  offerLetter OfferLetter?
+  onboarding  CandidateOnboarding?
+
+  @@map("candidate_applications")
+}
+
+// Candidate Application Status Enum
+enum CandidateApplicationStatus {
+  APPLIED
+  SCREENING
+  SHORTLISTED
+  INTERVIEW_SCHEDULED
+  REJECTED
+  OFFER_EXTENDED
+  HIRED
+}
+
+// Job Employment Type Enum
+enum JobEmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+}
+
+// Job Opening Status Enum
+enum JobOpeningStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+// Interview Model
+model Interview {
+  id                     String                   @id @default(uuid())
+  candidateApplicationId String
+  roundNumber            Int
+  roundType              InterviewRoundType
+  interviewDate          DateTime
+  interviewTime          String // Format: HH:mm
+  interviewer            String
+  location               String
+  mode                   InterviewMode
+  status                 InterviewStatus          @default(SCHEDULED)
+  notes                  String?
+  feedback               String?
+  rating                 Int? // 1-5 overall rating
+  technicalSkills        Int? // 1-5 rating
+  communication          Int? // 1-5 rating
+  problemSolving         Int? // 1-5 rating
+  culturalFit            Int? // 1-5 rating
+  strengths              String?
+  weaknesses             String?
+  recommendation         InterviewRecommendation?
+  feedbackStatus         FeedbackStatus           @default(SUBMITTED)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+
+  // Relations
+  candidateApplication CandidateApplication @relation(fields: [candidateApplicationId], references: [id], onDelete: Cascade)
+
+  @@map("interviews")
+}
+
+// Interview Round Type Enum
+enum InterviewRoundType {
+  TECHNICAL
+  HR
+  MANAGERIAL
+  FINAL
+}
+
+// Interview Mode Enum
+enum InterviewMode {
+  IN_PERSON
+  VIDEO_CALL
+  PHONE_CALL
+}
+
+// Interview Status Enum
+enum InterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+}
+
+// Interview Recommendation Enum
+enum InterviewRecommendation {
+  STRONGLY_RECOMMEND
+  RECOMMEND
+  NOT_SURE
+  NOT_RECOMMEND
+}
+
+// Feedback Status Enum
+enum FeedbackStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+}
+
+// Offer Letter Model
+model OfferLetter {
+  id                     String            @id @default(uuid())
+  offerNumber            String            @unique
+  candidateApplicationId String            @unique
+  offerDate              DateTime
+  joiningDate            DateTime
+  salary                 Float
+  currency               String            @default("INR")
+  designation            String
+  offerLetterUrl         String?
+  status                 OfferLetterStatus @default(DRAFT)
+  sentDate               DateTime?
+  acceptedDate           DateTime?
+  rejectedDate           DateTime?
+  expiryDate             DateTime?
+  notes                  String?
+  createdBy              String? // User ID
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  // Relations
+  candidateApplication CandidateApplication @relation(fields: [candidateApplicationId], references: [id], onDelete: Cascade)
+
+  @@map("offer_letters")
+}
+
+// Offer Letter Status Enum
+enum OfferLetterStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+// Candidate Onboarding Model
+model CandidateOnboarding {
+  id                     String           @id @default(uuid())
+  candidateApplicationId String           @unique
+  employeeId             String?          @unique
+  employeeCode           String?          @unique
+  offerAcceptedDate      DateTime
+  joiningDate            DateTime
+  onboardingStatus       OnboardingStatus @default(PENDING)
+  currentStep            Int              @default(1)
+  totalSteps             Int              @default(5)
+  documentsSubmitted     Int              @default(0)
+  totalDocuments         Int              @default(6)
+  notes                  String?
+  completedDate          DateTime?
+  createdBy              String? // User ID
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  // Relations
+  candidateApplication CandidateApplication @relation(fields: [candidateApplicationId], references: [id], onDelete: Cascade)
+
+  @@map("candidate_onboardings")
+}
+
+// Onboarding Status Enum
+enum OnboardingStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+}
+
+// KPI Model
+model KPI {
+  id              String       @id @default(uuid())
+  kpiName         String
+  kpiCode         String       @unique
+  category        String
+  description     String
+  measurementUnit String
+  targetValue     Float
+  weightage       Float // percentage
+  frequency       KPIFrequency
+  department      String?
+  designation     String?
+  isActive        Boolean      @default(true)
+  createdBy       String? // User ID
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Relations
+  assignments KPIAssignment[]
+
+  @@map("kpis")
+}
+
+// KPI Frequency Enum
+enum KPIFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+// KPI Assignment Model
+model KPIAssignment {
+  id               String              @id @default(uuid())
+  employeeMasterId String
+  kpiId            String
+  targetValue      Float
+  weightage        Float
+  assignedDate     DateTime            @default(now())
+  evaluationPeriod String // e.g., '2024-Q1', '2024-01'
+  assignedBy       String? // User ID
+  status           KPIAssignmentStatus @default(ACTIVE)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster  @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  kpi            KPI             @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  kpiEvaluations KPIEvaluation[]
+
+  @@unique([employeeMasterId, kpiId, evaluationPeriod, status])
+  @@map("kpi_assignments")
+}
+
+// KPI Assignment Status Enum
+enum KPIAssignmentStatus {
+  ACTIVE
+  COMPLETED
+  INACTIVE
+}
+
+// Monthly Evaluation Model
+model MonthlyEvaluation {
+  id               String           @id @default(uuid())
+  employeeMasterId String
+  evaluationMonth  String // YYYY-MM
+  kpiCount         Int              @default(0)
+  totalScore       Float            @default(0)
+  maxScore         Float            @default(0)
+  percentage       Float            @default(0)
+  status           EvaluationStatus @default(PENDING)
+  evaluatedBy      String? // User ID
+  evaluatedDate    DateTime?
+  approvedBy       String? // User ID
+  approvedDate     DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster  @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  kpiEvaluations KPIEvaluation[]
+
+  @@unique([employeeMasterId, evaluationMonth])
+  @@map("monthly_evaluations")
+}
+
+// KPI Evaluation Model (individual KPI scores in an evaluation)
+model KPIEvaluation {
+  id                  String   @id @default(uuid())
+  monthlyEvaluationId String
+  kpiAssignmentId     String
+  achievedValue       Float
+  score               Float
+  maxScore            Float
+  percentage          Float
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  monthlyEvaluation MonthlyEvaluation @relation(fields: [monthlyEvaluationId], references: [id], onDelete: Cascade)
+  kpiAssignment     KPIAssignment     @relation(fields: [kpiAssignmentId], references: [id], onDelete: Cascade)
+
+  @@map("kpi_evaluations")
+}
+
+// Evaluation Status Enum
+enum EvaluationStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  APPROVED
+}
+
+// Manager Review Model
+model ManagerReview {
+  id                  String       @id @default(uuid())
+  employeeMasterId    String
+  managerId           String // Employee Master ID of manager
+  reviewPeriod        String // e.g., '2024-Q1', '2024-01'
+  overallRating       Float // 1-5
+  technicalSkills     Float
+  communication       Float
+  teamwork            Float
+  leadership          Float
+  problemSolving      Float
+  strengths           String
+  areasForImprovement String
+  goalsForNextPeriod  String
+  comments            String
+  status              ReviewStatus @default(DRAFT)
+  submittedDate       DateTime?
+  approvedDate        DateTime?
+  createdBy           String? // User ID
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation("EmployeeReviews", fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  manager        EmployeeMaster @relation("ManagerReviews", fields: [managerId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeMasterId, reviewPeriod])
+  @@map("manager_reviews")
+}
+
+// Self Review Model
+model SelfReview {
+  id                 String           @id @default(uuid())
+  employeeMasterId   String
+  reviewPeriod       String // e.g., '2024-Q1', '2024-01'
+  overallRating      Float // 1-5
+  achievements       String
+  challenges         String
+  skillsLearned      String
+  goalsAchieved      String
+  goalsForNextPeriod String
+  supportNeeded      String
+  status             SelfReviewStatus @default(DRAFT)
+  submittedDate      DateTime?
+  reviewedDate       DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeMasterId, reviewPeriod])
+  @@map("self_reviews")
+}
+
+// Review Status Enum
+enum ReviewStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+}
+
+// Self Review Status Enum
+enum SelfReviewStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWED
+}
+
+// Appraisal Cycle Model
+model AppraisalCycle {
+  id                    String               @id @default(uuid())
+  cycleName             String
+  cycleCode             String               @unique
+  startDate             DateTime
+  endDate               DateTime
+  evaluationPeriod      String // e.g., '2024', '2024-Q1'
+  status                AppraisalCycleStatus @default(PLANNING)
+  totalEmployees        Int                  @default(0)
+  completedEvaluations  Int                  @default(0)
+  pendingEvaluations    Int                  @default(0)
+  selfReviewDeadline    DateTime?
+  managerReviewDeadline DateTime?
+  finalReviewDeadline   DateTime?
+  createdBy             String? // User ID
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@map("appraisal_cycles")
+}
+
+// Appraisal Cycle Status Enum
+enum AppraisalCycleStatus {
+  PLANNING
+  ACTIVE
+  EVALUATION
+  REVIEW
+  COMPLETED
+  CLOSED
+}
+
+// Promotion Recommendation Model
+model PromotionRecommendation {
+  id                     String          @id @default(uuid())
+  employeeMasterId       String
+  currentDepartment      String
+  currentDesignation     String
+  recommendedDepartment  String?
+  recommendedDesignation String
+  currentSalary          Float
+  recommendedSalary      Float
+  recommendationReason   String
+  performanceScore       Float
+  yearsInCurrentRole     Float
+  recommendedBy          String? // User ID
+  recommendationDate     DateTime        @default(now())
+  status                 PromotionStatus @default(PENDING)
+  approvedBy             String? // User ID
+  approvedDate           DateTime?
+  rejectionReason        String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+
+  @@map("promotion_recommendations")
+}
+
+// Promotion Status Enum
+enum PromotionStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  ON_HOLD
+}
+
+// Daily Attendance Model
+model DailyAttendance {
+  id               String           @id @default(uuid())
+  employeeMasterId String
+  date             DateTime         @db.Date
+  checkIn          String? // Format: HH:mm
+  checkOut         String? // Format: HH:mm
+  workingHours     Float?
+  status           AttendanceStatus @default(ABSENT)
+  location         String?
+  remarks          String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeMasterId, date])
+  @@map("daily_attendance")
+}
+
+// Attendance Status Enum
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  ON_LEAVE
+  HOLIDAY
+}
+
+// Check In/Out Log Model
+model CheckInOutLog {
+  id               String           @id @default(uuid())
+  employeeMasterId String
+  logDate          DateTime         @db.Date
+  checkInTime      String? // Format: HH:mm
+  checkOutTime     String? // Format: HH:mm
+  checkInLocation  String?
+  checkOutLocation String?
+  checkInMethod    CheckInMethod
+  checkOutMethod   CheckInMethod?
+  workingHours     Float?
+  status           CheckInOutStatus @default(CHECKED_IN)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+
+  @@map("check_in_out_logs")
+}
+
+// Check In Method Enum
+enum CheckInMethod {
+  BIOMETRIC
+  RFID
+  MOBILE_APP
+  MANUAL
+}
+
+// Check In/Out Status Enum
+enum CheckInOutStatus {
+  CHECKED_IN
+  CHECKED_OUT
+  INCOMPLETE
+}
+
+// Overtime Record Model
+model OvertimeRecord {
+  id               String         @id @default(uuid())
+  employeeMasterId String
+  date             DateTime       @db.Date
+  startTime        String // Format: HH:mm
+  endTime          String // Format: HH:mm
+  totalHours       Float
+  overtimeType     OvertimeType
+  reason           String
+  projectId        String?
+  status           OvertimeStatus @default(PENDING)
+  requestedDate    DateTime       @default(now())
+  approvedBy       String?
+  approvedDate     DateTime?
+  overtimeAmount   Float?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  project        Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@map("overtime_records")
+}
+
+// Overtime Type Enum
+enum OvertimeType {
+  WEEKDAY
+  WEEKEND
+  HOLIDAY
+}
+
+// Overtime Status Enum
+enum OvertimeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Attendance Regularization Model
+model AttendanceRegularization {
+  id                 String               @id @default(uuid())
+  requestNumber      String               @unique
+  employeeMasterId   String
+  date               DateTime             @db.Date
+  originalCheckIn    String? // Format: HH:mm
+  originalCheckOut   String? // Format: HH:mm
+  requestedCheckIn   String // Format: HH:mm
+  requestedCheckOut  String // Format: HH:mm
+  reason             String
+  supportingDocument String?
+  status             RegularizationStatus @default(PENDING)
+  requestedDate      DateTime             @default(now())
+  approvedBy         String?
+  approvedDate       DateTime?
+  rejectionReason    String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+
+  @@map("attendance_regularizations")
+}
+
+// Regularization Status Enum
+enum RegularizationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Project Hours Model
+model ProjectHours {
+  id               String             @id @default(uuid())
+  employeeMasterId String
+  projectId        String
+  date             DateTime           @db.Date
+  hoursWorked      Float
+  description      String?
+  status           ProjectHoursStatus @default(DRAFT)
+  submittedDate    DateTime?
+  approvedBy       String?
+  approvedDate     DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_hours")
+}
+
+// Project Hours Status Enum
+enum ProjectHoursStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+// Night Shift Allowance Model
+model NightShiftAllowance {
+  id               String           @id @default(uuid())
+  employeeMasterId String
+  date             DateTime         @db.Date
+  shiftStartTime   String // Format: HH:mm
+  shiftEndTime     String // Format: HH:mm
+  hoursWorked      Float
+  allowanceAmount  Float
+  status           NightShiftStatus @default(PENDING)
+  requestedDate    DateTime         @default(now())
+  approvedBy       String?
+  approvedDate     DateTime?
+  paidDate         DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+
+  @@map("night_shift_allowances")
+}
+
+// Night Shift Status Enum
+enum NightShiftStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+}
+
+// Leave Deduction Model
+model LeaveDeduction {
+  id               String               @id @default(uuid())
+  employeeMasterId String
+  date             DateTime             @db.Date
+  leaveType        String
+  daysDeducted     Float
+  reason           String
+  status           LeaveDeductionStatus @default(PENDING)
+  requestedDate    DateTime             @default(now())
+  approvedBy       String?
+  approvedDate     DateTime?
+  processedDate    DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  // Relations
+  employeeMaster EmployeeMaster @relation(fields: [employeeMasterId], references: [id], onDelete: Cascade)
+
+  @@map("leave_deductions")
+}
+
+// Leave Deduction Status Enum
+enum LeaveDeductionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSED
+}
+
+// Notification Template Model
+model NotificationTemplate {
+  id               String               @id @default(uuid())
+  templateName     String
+  templateCode     String               @unique
+  notificationType NotificationType
+  subject          String?
+  message          String
+  variables        String[] // Array of variable names
+  category         NotificationCategory
+  isActive         Boolean              @default(true)
+  usageCount       Int                  @default(0)
+  createdBy        String
+  createdDate      DateTime             @default(now())
+  lastModified     DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  // Relations
+  whatsappNotifications WhatsAppNotification[]
+  emailAlerts           EmailAlert[]
+
+  @@map("notification_templates")
+}
+
+enum NotificationType {
+  PUSH
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum NotificationCategory {
+  ATTENDANCE
+  LEAVE
+  PAYROLL
+  PERFORMANCE
+  REMINDER
+  GENERAL
+}
+
+// SMS Alert Model
+model SMSAlert {
+  id             String             @id @default(uuid())
+  message        String
+  targetAudience TargetAudience
+  targetDetails  String? // Department, Designation, Project, or Employee ID
+  scheduledDate  DateTime?
+  sentDate       DateTime?
+  status         NotificationStatus @default(DRAFT)
+  sentCount      Int?
+  deliveredCount Int?
+  createdBy      String
+  createdDate    DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@map("sms_alerts")
+}
+
+// WhatsApp Notification Model
+model WhatsAppNotification {
+  id             String             @id @default(uuid())
+  message        String
+  targetAudience TargetAudience
+  targetDetails  String?
+  templateId     String?
+  scheduledDate  DateTime?
+  sentDate       DateTime?
+  status         NotificationStatus @default(DRAFT)
+  sentCount      Int?
+  deliveredCount Int?
+  readCount      Int?
+  createdBy      String
+  createdDate    DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  // Relations
+  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@map("whatsapp_notifications")
+}
+
+// Email Alert Model
+model EmailAlert {
+  id             String             @id @default(uuid())
+  subject        String
+  emailBody      String
+  targetAudience TargetAudience
+  targetDetails  String?
+  templateId     String?
+  scheduledDate  DateTime?
+  sentDate       DateTime?
+  status         NotificationStatus @default(DRAFT)
+  sentCount      Int?
+  deliveredCount Int?
+  openedCount    Int?
+  createdBy      String
+  createdDate    DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  // Relations
+  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@map("email_alerts")
+}
+
+// Push Notification Model
+model PushNotification {
+  id             String               @id @default(uuid())
+  title          String
+  message        String
+  targetAudience TargetAudience
+  targetDetails  String?
+  priority       NotificationPriority @default(MEDIUM)
+  scheduledDate  DateTime?
+  sentDate       DateTime?
+  status         NotificationStatus   @default(DRAFT)
+  sentCount      Int?
+  readCount      Int?
+  createdBy      String
+  createdDate    DateTime             @default(now())
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@map("push_notifications")
+}
+
+enum TargetAudience {
+  ALL_EMPLOYEES
+  DEPARTMENT
+  DESIGNATION
+  PROJECT
+  INDIVIDUAL
+}
+
+enum NotificationStatus {
+  DRAFT
+  SCHEDULED
+  SENT
+  FAILED
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
