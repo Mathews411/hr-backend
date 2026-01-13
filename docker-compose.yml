@@ -7,21 +7,5 @@ services:
       - "3005:3000"
     env_file:
       - .env
-    depends_on:
-      - postgres
     command: node dist/src/main.js
-
-  postgres:
-    image: postgres:15
-    container_name: hr-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: hr_db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-volumes:
-  postgres_data:
 
